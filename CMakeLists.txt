@@ -36,6 +36,7 @@ set (PROJECT_VERSION
 
 # libraries are all shared by default.
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+option(SHAPELIB_RUN_TESTS "Run Tests" OFF)
 
 # Use rpath?
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -165,119 +166,121 @@ set(executables
   shptreedump
   )
 
-find_program(BASH_EXECUTABLE bash)
-find_program(SED_EXECUTABLE sed)
-if(BASH_EXECUTABLE AND SED_EXECUTABLE)
-  set(BUILD_TEST ON)
-else(BASH_EXECUTABLE AND SED_EXECUTABLE)
-  message(STATUS "WARNING: sed or bash not available so disabling testing")
-endif(BASH_EXECUTABLE AND SED_EXECUTABLE)
 
-if(MSVC)
-  # TODO(schwehr): How to test on Windows?
-  set(BUILD_TEST OFF)
-else(MSVC)
-  # TODO(schwehr): Temporary work around.
-  cmake_policy(SET CMP0026 OLD)
-endif(MSVC)
+if(SHAPELIB_RUN_TESTS)
+  find_program(BASH_EXECUTABLE bash)
+  find_program(SED_EXECUTABLE sed)
+  if(BASH_EXECUTABLE AND SED_EXECUTABLE)
+    set(BUILD_TEST ON)
+  else(BASH_EXECUTABLE AND SED_EXECUTABLE)
+    message(STATUS "WARNING: sed or bash not available so disabling testing")
+  endif(BASH_EXECUTABLE AND SED_EXECUTABLE)
 
-# For the first series of tests, the user needs to have downloaded
-# from http://dl.maptools.org/dl/shapelib/shape_eg_data.zip, unpacked
-# that file, and specified the location of that directory with
-# the cmake option, -DEG_DATA:PATH=whatever
-if(BUILD_TEST)
-  if(EG_DATA)
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/script.sed "s?/u/www/projects/shapelib/eg_data?${EG_DATA}?\n")
-  else(EG_DATA)
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/script.sed "")
-    message(STATUS "WARNING: EG_DATA:PATH not set to point to downloaded eg_data directory so the eg_data part of testing will be ignored.")
-  endif(EG_DATA)
-endif(BUILD_TEST)
+  # if(MSVC)
+  #   # TODO(schwehr): How to test on Windows?
+  #   set(BUILD_TEST OFF)
+  # else(MSVC)
+  #   # TODO(schwehr): Temporary work around.
+  #   cmake_policy(SET CMP0026 OLD)
+  # endif(MSVC)
 
-if (NOT MSVC)
-  # Set the run time path for shared libraries for non-Windows machines.
-  set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-  if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # See also INSTALL_RPATH property on the tools.
-    set (CMAKE_MACOSX_RPATH ON)
-  else ()
-    # Use relative path so that package is relocatable
-    set (CMAKE_INSTALL_RPATH "\$ORIGIN/${RELATIVE_LIBDIR}")
-  endif ()
-endif ()
-
-foreach(executable ${executables})
-  add_executable(${executable} ${executable}.c)
-  target_link_libraries(${executable} ${PACKAGE})
-  if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # Ensure that the package is relocatable
-    set_target_properties (${TOOLS} PROPERTIES
-      INSTALL_RPATH "@loader_path/${RELATIVE_LIBDIR}")
-  endif ()
+  # For the first series of tests, the user needs to have downloaded
+  # from http://dl.maptools.org/dl/shapelib/shape_eg_data.zip, unpacked
+  # that file, and specified the location of that directory with
+  # the cmake option, -DEG_DATA:PATH=whatever
   if(BUILD_TEST)
-    get_target_property(${executable}_LOC ${executable} LOCATION)
-    file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/script.sed "s?\\./${executable}?${${executable}_LOC}?\n")
+    if(EG_DATA)
+      file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/script.sed "s?/u/www/projects/shapelib/eg_data?${EG_DATA}?\n")
+    else(EG_DATA)
+      file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/script.sed "")
+      message(STATUS "WARNING: EG_DATA:PATH not set to point to downloaded eg_data directory so the eg_data part of testing will be ignored.")
+    endif(EG_DATA)
   endif(BUILD_TEST)
-endforeach(executable ${executables})
 
-install(TARGETS ${executables}
-  EXPORT targets DESTINATION ${CMAKE_INSTALL_BINDIR})
+  if (NOT MSVC)
+    # Set the run time path for shared libraries for non-Windows machines.
+    set (CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      # See also INSTALL_RPATH property on the tools.
+      set (CMAKE_MACOSX_RPATH ON)
+    else ()
+      # Use relative path so that package is relocatable
+      set (CMAKE_INSTALL_RPATH "\$ORIGIN/${RELATIVE_LIBDIR}")
+    endif ()
+  endif ()
 
-# Install header
-install(FILES shapefil.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-# For compatibility with older installation
-install(FILES shapefil.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/shapelib)
-
-if(BUILD_TEST)
-  # Set up tests:
-
-  enable_testing()
-
-  # Other executables to be built to facilitate tests.
-  foreach(executable shptest shputils)
+  foreach(executable ${executables})
     add_executable(${executable} ${executable}.c)
     target_link_libraries(${executable} ${PACKAGE})
-    get_target_property(${executable}_LOC ${executable} LOCATION)
-    file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/script.sed "s?\\./${executable}?${${executable}_LOC}?\n")
-  endforeach(executable shptest shputils)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      # Ensure that the package is relocatable
+      set_target_properties (${TOOLS} PROPERTIES
+        INSTALL_RPATH "@loader_path/${RELATIVE_LIBDIR}")
+    endif ()
+    if(BUILD_TEST)
+      get_target_property(${executable}_LOC ${executable} LOCATION)
+      file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/script.sed "s?\\./${executable}?${${executable}_LOC}?\n")
+    endif(BUILD_TEST)
+  endforeach(executable ${executables})
 
-  # Write this as a shell script since execute_process cannot handle
-  # anything like redirection.
-  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/script.sh "${SED_EXECUTABLE} -f script.sed < $1 >| $2")
-  execute_process(
-    COMMAND
-    ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/script.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/test1.sh ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test1.sh
-    )
+  install(TARGETS ${executables}
+    EXPORT targets DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-  execute_process(
-    COMMAND
-    ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/script.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/test2.sh ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test2.sh
-    )
+  # Install header
+  install(FILES shapefil.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-  execute_process(
-    COMMAND
-    ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/script.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/test3.sh ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test3.sh
-    )
+  # For compatibility with older installation
+  install(FILES shapefil.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/shapelib)
 
-  if(EG_DATA)
-    # These tests correspond to everything in test1.sh
-    add_test(
-      NAME test1
-      COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test1.sh
+  if(BUILD_TEST)
+    # Set up tests:
+
+    enable_testing()
+
+    # Other executables to be built to facilitate tests.
+    foreach(executable shptest shputils)
+      add_executable(${executable} ${executable}.c)
+      target_link_libraries(${executable} ${PACKAGE})
+      get_target_property(${executable}_LOC ${executable} LOCATION)
+      file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/script.sed "s?\\./${executable}?${${executable}_LOC}?\n")
+    endforeach(executable shptest shputils)
+
+    # Write this as a shell script since execute_process cannot handle
+    # anything like redirection.
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/script.sh "${SED_EXECUTABLE} -f script.sed < $1 >| $2")
+    execute_process(
+      COMMAND
+      ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/script.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/test1.sh ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test1.sh
       )
-  endif(EG_DATA)
-  # These tests correspond to everything in test2.sh
-  add_test(
-    NAME test2
-    COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test2.sh
-    )
 
-  # These tests correspond to everything in test3.sh
-  add_test(
-    NAME test3
-    COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test3.sh
-    )
-endif(BUILD_TEST)
+    execute_process(
+      COMMAND
+      ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/script.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/test2.sh ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test2.sh
+      )
 
-add_subdirectory (cmake)
+    execute_process(
+      COMMAND
+      ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/script.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/test3.sh ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test3.sh
+      )
+
+    if(EG_DATA)
+      # These tests correspond to everything in test1.sh
+      add_test(
+        NAME test1
+        COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test1.sh
+        )
+    endif(EG_DATA)
+    # These tests correspond to everything in test2.sh
+    add_test(
+      NAME test2
+      COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test2.sh
+      )
+
+    # These tests correspond to everything in test3.sh
+    add_test(
+      NAME test3
+      COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/sed_scripted_test3.sh
+      )
+  endif(BUILD_TEST)
+endif(SHAPELIB_RUN_TESTS)
+
